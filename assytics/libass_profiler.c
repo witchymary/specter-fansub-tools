@@ -66,8 +66,10 @@ int main(int argc, char *argv[]) {
     while(my_ass_images != NULL){
       int h = my_ass_images->h;
       int w = my_ass_images->w;
-      int stride = my_ass_images->stride;
-      long long image_size = stride*(h-1) + w;
+      // libass computes the total allocated memory as: stride*(h-1) + w
+      // but rect-clipped events inherit the stride size of its unclipped bitmap,
+      // causing bitmap sizes to blow up when it comes to rect-clip gradients.
+      long long image_size = w * h;
       frame_total_image_size += image_size;
       frame_largest_image_size = frame_largest_image_size > image_size ? frame_largest_image_size : image_size;
       frame_image_count++;
