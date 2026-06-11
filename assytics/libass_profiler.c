@@ -51,7 +51,12 @@ int main(int argc, char *argv[]) {
   FILE* outfile = fopen(outputfilename,"w");
   fprintf(outfile, "%s\n", inputfilename);
   fprintf(outfile, "time,total_image_size,largest_image_size,image_count,time_benchmark\n");
-  for (long long t = 0; t < track_duration; t = t + 1000/fps) {
+
+  for (
+    long long frame_count = 0, t;
+    (t = (long long)((double)frame_count * 1000.0 / fps)) < track_duration;
+    ++frame_count
+  ) {
     long long frame_total_image_size = 0;
     long long frame_largest_image_size = 0;
     long long frame_image_count = 0;
