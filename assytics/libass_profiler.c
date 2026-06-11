@@ -37,7 +37,7 @@ int main(int argc, char *argv[]) {
   }
   char* inputfilename = argv[1];
   char* outputfilename = defaultoutputfile;
-  if (argc > 3){
+  if (argc > 2){
     outputfilename = argv[2];
   }
   ASS_Library* my_ass_library = ass_library_init();
