@@ -8,13 +8,16 @@ float fps = 23.976;
 typedef struct {
     char *inputfilename;
     char *outputfilename;
+    int   res_width;
+    int   res_height;
 } config_t;
 
 void printhelp(char *defaultoutputfile) {
   printf("Usage: libass_profiler [options] ASSFILE\n");
   printf("Options:\n");
-  printf("  --help,   -h                 Print this message and exit.\n");
-  printf("  --output, -o PATH            Output CSV file (default: %s).\n", defaultoutputfile);
+  printf("  --help,       -h               Print this message and exit.\n");
+  printf("  --output,     -o PATH          Output CSV file (default: %s).\n", defaultoutputfile);
+  printf("  --resolution, -r WIDTHxHEIGHT  Canvas resolution for the ASS renderer (default: from ASSFILE).\n");
 }
 
 int timecode_string(char* output, long long ms_long){
@@ -38,11 +41,12 @@ long long find_track_duration_in_ms(ASS_Track* track){
 int parse_args(int argc, char *argv[], config_t *cfg) {
   int opt;
 
-  const char *short_opts = ":ho:";
+  const char *short_opts = ":ho:r:";
   static struct option long_opts[] =
     {
       {"help",       no_argument,       NULL,  'h'},
       {"output",     required_argument, NULL,  'o'},
+      {"resolution", required_argument, NULL,  'r'},
       {NULL,         0,                 NULL,    0}
     };
 
@@ -57,6 +61,17 @@ int parse_args(int argc, char *argv[], config_t *cfg) {
 
       case 'o':
         cfg->outputfilename = optarg;
+        break;
+
+      case 'r':
+        if (sscanf(optarg, "%dx%d", &cfg->res_width, &cfg->res_height) != 2) {
+          printf("Invalid resolution format '%s'. Expected WIDTHxHEIGHT (e.g., 1920x1080).\n", optarg);
+          return 1;
+        }
+        if (cfg->res_width <= 0 || cfg->res_height <= 0) {
+          printf("Resolution dimensions must be positive integers (got %dx%d).\n", cfg->res_width, cfg->res_height);
+          return 1;
+        }
         break;
 
       case '?':
@@ -96,6 +111,8 @@ int parse_args(int argc, char *argv[], config_t *cfg) {
 int main(int argc, char *argv[]) {
   config_t cfg = {
     .outputfilename = "output.csv",
+    .res_width      = 0,
+    .res_height     = 0,
     .inputfilename  = NULL,
   };
 
@@ -108,7 +125,19 @@ int main(int argc, char *argv[]) {
   ass_set_extract_fonts(my_ass_library,1);
   ASS_Track* my_ass_track = ass_read_file(my_ass_library,cfg.inputfilename,NULL);
   ASS_Renderer* my_ass_renderer = ass_renderer_init(my_ass_library);
-  ass_set_frame_size(my_ass_renderer, my_ass_track->PlayResX, my_ass_track->PlayResY);
+
+  if (!cfg.res_width && !cfg.res_height) {
+    cfg.res_width  = my_ass_track->PlayResX;
+    cfg.res_height = my_ass_track->PlayResY;
+  }
+
+  if (cfg.res_width <= 0 || cfg.res_height <= 0) {
+    printf("Canvas resolution is %dx%d; ASSFILE may be missing PlayResX/PlayResY headers.\n",
+        cfg.res_width, cfg.res_height);
+    return 1;
+  }
+
+  ass_set_frame_size(my_ass_renderer, cfg.res_width, cfg.res_height);
   ass_set_fonts(my_ass_renderer,NULL,"Sans",1,NULL,1);
   long long track_duration = find_track_duration_in_ms(my_ass_track);
 
