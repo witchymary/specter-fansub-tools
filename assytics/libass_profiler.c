@@ -1,13 +1,20 @@
 #include <stdio.h>
 #include <time.h>
+#include <getopt.h>
 #include <ass/ass.h>
 
-char* defaultoutputfile = "output.csv";
 float fps = 23.976;
 
-void printhelp() {
-  printf("Usage: libass_profiler <assfile> <output>\n");
-  printf("output is optional and defaults to %s\n",defaultoutputfile);
+typedef struct {
+    char *inputfilename;
+    char *outputfilename;
+} config_t;
+
+void printhelp(char *defaultoutputfile) {
+  printf("Usage: libass_profiler [options] ASSFILE\n");
+  printf("Options:\n");
+  printf("  --help,   -h                 Print this message and exit.\n");
+  printf("  --output, -o PATH            Output CSV file (default: %s).\n", defaultoutputfile);
 }
 
 int timecode_string(char* output, long long ms_long){
@@ -28,28 +35,85 @@ long long find_track_duration_in_ms(ASS_Track* track){
   return retval;
 }
 
+int parse_args(int argc, char *argv[], config_t *cfg) {
+  int opt;
+
+  const char *short_opts = ":ho:";
+  static struct option long_opts[] =
+    {
+      {"help",       no_argument,       NULL,  'h'},
+      {"output",     required_argument, NULL,  'o'},
+      {NULL,         0,                 NULL,    0}
+    };
+
+  while (1) {
+    opt = getopt_long(argc, argv, short_opts, long_opts, NULL);
+    if (opt == -1) break;
+
+    switch(opt) {
+      case 'h':
+        printhelp(cfg->outputfilename);
+        return 1;
+
+      case 'o':
+        cfg->outputfilename = optarg;
+        break;
+
+      case '?':
+        // This is needed otherwise clustered options (e.g., -xo) would not be printed properly
+        if (optopt) {
+          printf("Unknown option: -%c\n", optopt);
+        } else {
+          printf("Unknown option: %s\n", argv[optind - 1]);
+        }
+        return 1;
+
+      case ':':
+        printf("Missing argument for %s\n", argv[optind - 1]);
+        return 1;
+
+      default:
+        printf("Unexpected getopt_long return value: %c\n", (char)opt);
+        return 1;
+    }
+  }
+
+  int nargs = argc - optind;
+  if (argc == 1) {
+    printhelp(cfg->outputfilename);
+    return 1;
+  }
+
+  if (nargs != 1) {
+    printf("Expected one positional argument, got %d\n", nargs);
+    return 1;
+  }
+
+  cfg->inputfilename = argv[optind];
+  return 0;
+}
+
 int main(int argc, char *argv[]) {
+  config_t cfg = {
+    .outputfilename = "output.csv",
+    .inputfilename  = NULL,
+  };
+
+  if (parse_args(argc, argv, &cfg) != 0) return 1;
+
   int version = ass_library_version();
   printf("libass version %d\n",version);
-  if (argc < 2){
-    printhelp();
-    return 0;
-  }
-  char* inputfilename = argv[1];
-  char* outputfilename = defaultoutputfile;
-  if (argc > 3){
-    outputfilename = argv[2];
-  }
+
   ASS_Library* my_ass_library = ass_library_init();
   ass_set_extract_fonts(my_ass_library,1);
-  ASS_Track* my_ass_track = ass_read_file(my_ass_library,inputfilename,NULL);
+  ASS_Track* my_ass_track = ass_read_file(my_ass_library,cfg.inputfilename,NULL);
   ASS_Renderer* my_ass_renderer = ass_renderer_init(my_ass_library);
   ass_set_frame_size(my_ass_renderer, my_ass_track->PlayResX, my_ass_track->PlayResY);
   ass_set_fonts(my_ass_renderer,NULL,"Sans",1,NULL,1);
   long long track_duration = find_track_duration_in_ms(my_ass_track);
 
-  FILE* outfile = fopen(outputfilename,"w");
-  fprintf(outfile, "%s\n", inputfilename);
+  FILE* outfile = fopen(cfg.outputfilename,"w");
+  fprintf(outfile, "%s\n", cfg.inputfilename);
   fprintf(outfile, "time,total_image_size,largest_image_size,image_count,time_benchmark\n");
   for (long long t = 0; t < track_duration; t = t + 1000/fps) {
     long long frame_total_image_size = 0;
