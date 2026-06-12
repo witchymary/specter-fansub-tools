@@ -1,6 +1,9 @@
 #include <stdio.h>
+#include <stdlib.h>
+#include <dirent.h>
 #include <time.h>
 #include <getopt.h>
+#include <string.h>
 #include <ass/ass.h>
 
 float fps = 23.976;
@@ -8,6 +11,7 @@ float fps = 23.976;
 typedef struct {
     char *inputfilename;
     char *outputfilename;
+    char *fontdir;
     int   res_width;
     int   res_height;
 } config_t;
@@ -18,6 +22,7 @@ void printhelp(char *defaultoutputfile) {
   printf("  --help,       -h               Print this message and exit.\n");
   printf("  --output,     -o PATH          Output CSV file (default: %s).\n", defaultoutputfile);
   printf("  --resolution, -r WIDTHxHEIGHT  Canvas resolution for the ASS renderer (default: from ASSFILE).\n");
+  printf("  --font-dir       PATH          Directory containing fonts to be loaded by the ASS renderer.\n");
 }
 
 int timecode_string(char* output, long long ms_long){
@@ -38,8 +43,68 @@ long long find_track_duration_in_ms(ASS_Track* track){
   return retval;
 }
 
+int load_fonts_from_dir(ASS_Library *library, char *dir_path) {
+  DIR *dir = opendir(dir_path);
+
+  if (!dir) {
+    printf("Unable to read directory: %s\n", dir_path);
+    return 1;
+  }
+
+  struct dirent *entry;
+  while ((entry = readdir(dir)) != NULL) {
+    char* filename = entry->d_name;
+
+    if (strcmp(filename, ".") == 0 || strcmp(filename, "..") == 0) {
+      continue;
+    }
+
+    if (!strstr(filename, ".ttf") && !strstr(filename, ".TTF") &&
+        !strstr(filename, ".otf") && !strstr(filename, ".OTF")) {
+      continue;
+    }
+
+    char full_path[4096];
+    snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, filename);
+
+    FILE *font = fopen(full_path, "rb");
+    if (!font) {
+      printf("Warning: Could not open font file '%s'\n", full_path);
+      continue;
+    }
+
+    // Getting file size
+    fseek(font, 0, SEEK_END);
+    long data_size = ftell(font);
+    fseek(font, 0, SEEK_SET);
+
+    if (data_size <= 0) {
+        fclose(font);
+        continue;
+    }
+
+    char *data = malloc(data_size);
+    if (!data) {
+      fclose(font);
+      continue;
+    }
+
+    size_t read_bytes = fread(data, 1, data_size, font);
+    fclose(font);
+
+    if (read_bytes == (size_t)data_size) {
+      ass_add_font(library, filename, data, (int)data_size);
+    }
+
+    free(data);
+  }
+  closedir(dir);
+  return 0;
+}
+
 int parse_args(int argc, char *argv[], config_t *cfg) {
   int opt;
+  int longindex = -1;
 
   const char *short_opts = ":ho:r:";
   static struct option long_opts[] =
@@ -47,14 +112,21 @@ int parse_args(int argc, char *argv[], config_t *cfg) {
       {"help",       no_argument,       NULL,  'h'},
       {"output",     required_argument, NULL,  'o'},
       {"resolution", required_argument, NULL,  'r'},
+      {"font-dir",   required_argument, NULL,    0},
       {NULL,         0,                 NULL,    0}
     };
 
   while (1) {
-    opt = getopt_long(argc, argv, short_opts, long_opts, NULL);
+    opt = getopt_long(argc, argv, short_opts, long_opts, &longindex);
     if (opt == -1) break;
 
     switch(opt) {
+      case 0:
+        if (strcmp(long_opts[longindex].name, "font-dir") == 0) {
+          cfg->fontdir = optarg;
+        }
+      break;
+
       case 'h':
         printhelp(cfg->outputfilename);
         return 1;
@@ -114,6 +186,7 @@ int main(int argc, char *argv[]) {
     .res_width      = 0,
     .res_height     = 0,
     .inputfilename  = NULL,
+    .fontdir        = NULL,
   };
 
   if (parse_args(argc, argv, &cfg) != 0) return 1;
@@ -123,6 +196,11 @@ int main(int argc, char *argv[]) {
 
   ASS_Library* my_ass_library = ass_library_init();
   ass_set_extract_fonts(my_ass_library,1);
+
+  if (cfg.fontdir && load_fonts_from_dir(my_ass_library, cfg.fontdir)) {
+      return 1;
+  }
+
   ASS_Track* my_ass_track = ass_read_file(my_ass_library,cfg.inputfilename,NULL);
   ASS_Renderer* my_ass_renderer = ass_renderer_init(my_ass_library);
 
