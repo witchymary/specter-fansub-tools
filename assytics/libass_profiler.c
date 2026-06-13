@@ -6,12 +6,11 @@
 #include <string.h>
 #include <ass/ass.h>
 
-float fps = 23.976;
-
 typedef struct {
     char *inputfilename;
     char *outputfilename;
     char *fontdir;
+    float fps;
     int   res_width;
     int   res_height;
 } config_t;
@@ -22,6 +21,7 @@ void printhelp(char *defaultoutputfile) {
   printf("  --help,       -h               Print this message and exit.\n");
   printf("  --output,     -o PATH          Output CSV file (default: %s).\n", defaultoutputfile);
   printf("  --resolution, -r WIDTHxHEIGHT  Canvas resolution for the ASS renderer (default: from ASSFILE).\n");
+  printf("  --fps            VALUE         Set the ASS renderer's FPS (default: 23.976).\n");
   printf("  --font-dir       PATH          Directory containing fonts to be loaded by the ASS renderer.\n");
 }
 
@@ -113,6 +113,7 @@ int parse_args(int argc, char *argv[], config_t *cfg) {
       {"output",     required_argument, NULL,  'o'},
       {"resolution", required_argument, NULL,  'r'},
       {"font-dir",   required_argument, NULL,    0},
+      {"fps",        required_argument, NULL,    0},
       {NULL,         0,                 NULL,    0}
     };
 
@@ -124,6 +125,14 @@ int parse_args(int argc, char *argv[], config_t *cfg) {
       case 0:
         if (strcmp(long_opts[longindex].name, "font-dir") == 0) {
           cfg->fontdir = optarg;
+        } else if (strcmp(long_opts[longindex].name, "fps") == 0) {
+          char *endptr;
+          cfg->fps = strtof(optarg, &endptr);
+
+          if (*endptr != '\0' || cfg->fps <= 0.0) {
+            printf("Invalid FPS value '%s'.\n", optarg);
+            return 1;
+          }
         }
       break;
 
@@ -183,6 +192,7 @@ int parse_args(int argc, char *argv[], config_t *cfg) {
 int main(int argc, char *argv[]) {
   config_t cfg = {
     .outputfilename = "output.csv",
+    .fps            = 23.976,
     .res_width      = 0,
     .res_height     = 0,
     .inputfilename  = NULL,
@@ -222,7 +232,7 @@ int main(int argc, char *argv[]) {
   FILE* outfile = fopen(cfg.outputfilename,"w");
   fprintf(outfile, "%s\n", cfg.inputfilename);
   fprintf(outfile, "time,total_image_size,largest_image_size,image_count,time_benchmark\n");
-  for (long long t = 0; t < track_duration; t = t + 1000/fps) {
+  for (long long t = 0; t < track_duration; t = t + 1000/cfg.fps) {
     long long frame_total_image_size = 0;
     long long frame_largest_image_size = 0;
     long long frame_image_count = 0;
